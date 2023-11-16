@@ -507,7 +507,7 @@ server <- function(input, output, session) {
     dmax <- dmax - mindmin + 1
     ne <- max(values2$opt[["data"]]$E2) - min(values2$opt[["data"]]$E2) + 1
     m <- matrix(NA, nrow = ne, ncol = values2$opt[["ni"]])
-    for (i in 1:values2$opt[["ni"]]) m[(dmin[i]):(dmax[i]), i] <- 4 + lstgn(values2$opt[["data"]]$SS[values2$opt[["data"]]$ID == ids[i]])
+    for (i in 1:values2$opt[["ni"]]) m[(dmin[i]):(dmax[i]), i] <- lstgn.hypnoscope(values2$opt[["data"]]$SS[values2$opt[["data"]]$ID == ids[i]])
     m
   })
 
@@ -519,37 +519,47 @@ server <- function(input, output, session) {
     ids <- unique(values2$opt[["data"]]$ID)
     ne <- max(values2$opt[["data"]]$EA) - min(values2$opt[["data"]]$EA) + 1
     m <- matrix(NA, nrow = ne, ncol = values2$opt[["ni"]])
-    for (i in 1:values2$opt[["ni"]]) m[(dmin[i]):(dmax[i]), i] <- 4 + lstgn(values2$opt[["data"]]$SS[values2$opt[["data"]]$ID == ids[i]])
+    for (i in 1:values2$opt[["ni"]]) m[(dmin[i]):(dmax[i]), i] <- lstgn.hypnoscope(values2$opt[["data"]]$SS[values2$opt[["data"]]$ID == ids[i]])
     m
   })
 
   stgpalW <- reactive({
-    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#CA7647", lstgcols("?"))
+    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("W"), "#EBE3DD", lstgcols("?"))
     stcol
   })
 
   stgpalN1 <- reactive({
-    stcol <- c("#CA7647", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"))
+    stcol <- c(lstgcols("N1"), "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"))
     stcol
   })
 
   stgpalN2 <- reactive({
-    stcol <- c("#EBE3DD", "#CA7647", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"))
+    stcol <- c("#EBE3DD", lstgcols("N2"), "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"))
     stcol
   })
 
   stgpalN3 <- reactive({
-    stcol <- c("#EBE3DD", "#EBE3DD", "#CA7647", "#EBE3DD", "#EBE3DD", lstgcols("?"))
+    stcol <- c("#EBE3DD", "#EBE3DD", lstgcols("N3"), "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"))
     stcol
   })
 
   stgpalR <- reactive({
-    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#CA7647", "#EBE3DD", lstgcols("?"))
+    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("R"), "#EBE3DD", "#EBE3DD", lstgcols("?"))
+    stcol
+  })
+
+  stgpalL <- reactive({
+    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("L"), "#EBE3DD")
+    stcol
+  })
+
+  stgpalU <- reactive({
+    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#FF0000" ) # lstgcols("?") )
     stcol
   })
 
   default <- reactive({
-    stcol <- c("#3D6D88", "#579DAF", "#0B2F38", "#CA7647", "#EBE3DD", lstgcols("?"))
+    stcol <- c("#3D6D88", "#579DAF", "#0B2F38", "#CA7647", "#EBE3DD", lstgcols("L"), lstgcols("?"))
     stcol
   })
 
@@ -599,7 +609,9 @@ server <- function(input, output, session) {
       N2 = stgpalN2(),
       N3 = stgpalN3(),
       R = stgpalR(),
-      Default = default()
+      L = stgpalL(),
+      U = stgpalU(),
+      All = default()
     )
 
     # Set Image properties
@@ -658,9 +670,16 @@ server <- function(input, output, session) {
         #     col = "gray20", las = 2, lwd.ticks = 0.5, cex.axis = 1,
         #     col.axis = "gray20", lwd = 1.5)
 
+        ustg <- as.integer(unique(names(table(data))))
+        print(stcol)
+	print(ustg)
+	brks <- c( ustg[1] - 0.5 , ustg + 0.5 )
+	print(brks)
+ 	print(stcol[ustg])
+
         image(data,
-          useRaster = T, col = stcol,
-          xaxt = "n", yaxt = "n", axes = T, breaks = 0.5 + (0:6)
+          useRaster = T, col = stcol[ustg],
+          xaxt = "n", yaxt = "n", axes = T, breaks = brks
         )
 
         title(

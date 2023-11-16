@@ -79,7 +79,7 @@ ui <- navbarPage(
         hr(style = "border-color: #d9d9d9"),
         selectInput(inputId = "ultradian2", label = "Align by", choices = c("CLOCK_TIME", "ONSET"), selected = "CLOCK_TIME", multiple = F),
         selectInput(inputId = "sort", label = "Sort by", choices = c("Default"), selected = "Default", multiple = F),
-        selectInput(inputId = "color", label = "Color scheme", choices = c("Default", "W", "N1", "N2", "N3", "R"), selected = "Default", multiple = F),
+        selectInput(inputId = "color", label = "Color scheme", choices = c("All", "W", "N1", "N2", "N3", "R","L","U"), selected = "All", multiple = F),
         hr(style = "border-color: #d9d9d9"),
         uiOutput(outputId = "n")
       ),

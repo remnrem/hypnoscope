@@ -1,3 +1,17 @@
+
+
+lstgn.hypnoscope <- function(ss) {
+    ss[ss == "N1" | ss == "NREM1"] <- 1
+    ss[ss == "N2" | ss == "NREM2"] <- 2
+    ss[ss == "N3" | ss == "NREM3"] <- 3
+    ss[ss == "R" | ss == "REM"] <- 4
+    ss[ss == "W" | ss == "wake"] <- 5
+    ss[ss == "L" ] <- 6
+    ss[ss == "?" | ss == "U" ] <- 7
+    ss[is.na(ss)] <- 7
+    as.numeric(ss)
+}
+
 lhypno2 <- function(hypno, cycles = NULL, times = seq(0, by = 30, length.out = length(ss)), start = 0, stop = max(times)) {
   ss <- hypno$STAGE
   ss[is.na(ss)] <- "?"
