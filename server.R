@@ -426,7 +426,7 @@ server <- function(input, output, session) {
     values2$file.details <-
       list(
         hypnos.names = "example.hypnos",
-        hypnos.file = "data/example.hypnos"
+        hypnos.file = "data/example.hypnos.gz"
       )
     # Reset Shiny UI components
   })
