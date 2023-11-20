@@ -1,7 +1,14 @@
 
+# include cycle infor
+#  no cycle = 0
+#  cycle 1  +10
+#  cycle 2  +20
+#  etc
 
-lstgn.hypnoscope <- function(ss) {
-    ss[ss == "N1" | ss == "NREM1"] <- 1
+lstgn.hypnoscope <- function(ssc) {
+    ss <- ssc[,1]
+
+    ss[ss == "N1" | ss == "NREM1"] <- 1 
     ss[ss == "N2" | ss == "NREM2"] <- 2
     ss[ss == "N3" | ss == "NREM3"] <- 3
     ss[ss == "R" | ss == "REM"] <- 4
@@ -9,7 +16,21 @@ lstgn.hypnoscope <- function(ss) {
     ss[ss == "L" ] <- 6
     ss[ss == "?" | ss == "U" ] <- 7
     ss[is.na(ss)] <- 7
-    as.numeric(ss)
+
+    ss <- as.integer(ss)
+    # add in cycle info
+    ss <- ss + ssc[,2] * 10
+
+    ss
+}
+
+lhypno.mini <- function( ss , label )
+{
+  ss[is.na(ss)] <- "?"
+  sn <- lstgn(ss)
+  plot(sn, lwd = 2, col = "gray", axes = F, ylim = c(-4.5, 3.5), ylab = "", yaxt = "n" ,type="l" )
+  points( sn, col = lstgcols(ss) , pch = 20, cex=1 )
+  text( 5 , 2.7 , paste( label , " (" , round(length(sn)/120,1)," hrs)", sep=""), pos=4,adj=0) 
 }
 
 lhypno2 <- function(hypno, cycles = NULL, times = seq(0, by = 30, length.out = length(ss)), start = 0, stop = max(times)) {

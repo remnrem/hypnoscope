@@ -34,7 +34,7 @@ ui <- navbarPage(
         ),
         textOutput("text.header1a"),
         hr(style = "border-color: #d9d9d9"),
-        actionButton("load.default", "Example"),
+        actionButton("load.default", "Load an example hypnogram",width="100%"),
         hr(style = "border-color: #d9d9d9"),
         import_copypaste_ui(id = "myid", title = NULL, name_field = F)
       ),
@@ -70,31 +70,50 @@ ui <- navbarPage(
           accept = c(
             ".csv",
             ".tsv",
-            ".hypnos"
+	    ".txt",
+            ".hypnos",".gz"
           )
         ),
         textOutput("text.header2a"),
         hr(style = "border-color: #d9d9d9"),
-        actionButton("load.default2", "Example"),
+        actionButton("load.default2", "Load example hypnograms",width="100%"),
         hr(style = "border-color: #d9d9d9"),
-        selectInput(inputId = "ultradian2", label = "Align by", choices = c("CLOCK_TIME", "ONSET"), selected = "CLOCK_TIME", multiple = F),
-        selectInput(inputId = "sort", label = "Sort by", choices = c("Default"), selected = "Default", multiple = F),
-        selectInput(inputId = "color", label = "Color scheme", choices = c("All", "W", "N1", "N2", "N3", "R","L","U"), selected = "All", multiple = F),
+        fileInput("upload3",
+          label = "Optional covariates",
+          multiple = TRUE,
+          accept = c( ".csv",".tsv",".txt") ) ,
         hr(style = "border-color: #d9d9d9"),
-        uiOutput(outputId = "n")
+        selectInput(inputId = "ultradian2", label = "Align by", choices = c("Clock-time", "Elapsed-time"), selected = "Clock-time", multiple = F),
+        selectInput(inputId = "sort", label = "Sort by", choices = c("Unsorted","Sleep Onset", "Start of recording"), selected = "Unsorted", multiple = F),
+        selectInput(inputId = "color", label = "Color scheme",
+	 choices = c("All", "W", "N1", "N2", "N3", "NR", "R", "S", "Cycle","L", "U"), selected = "All", multiple = F),
+        hr(style = "border-color: #d9d9d9"),
+        uiOutput(outputId = "n"),
+        hr(style = "border-color: #d9d9d9"),
+        selectInput(inputId = "procn1", label = "Process individual", choices = NULL , selected = NULL,multiple=F),
+	actionButton( "runn1", "Generate hypnogram stats",width="100%"),
       ),
+
       column(
         10,
-        align = "center",
-        box(
-          style = "width:1200px; height:800px; overflow-y: scroll;",
-          imageOutput("myImage")
-        )
-      )
+        align = "left",
+	plotOutput("hyp1",  width = "100%", height = "40px") , 
+         box(
+            style = "width:1280px; overflow-x: scroll; height:800px; overflow-y: scroll;",
+            imageOutput("myImage", hover = hoverOpts(id="hover1" , delay=150 )) 
+             )
+	    
+          )
     )
   ),
 
   # Component 3
+  tabPanel(
+    title = "Covariates",
+    DT::dataTableOutput("covar.table") 
+  ),	
+
+  # Component 4
   tabPanel(
     title = "Help",
     tags$head(
@@ -115,32 +134,39 @@ ui <- navbarPage(
                 font-family:monospace;
             }"))
     ),
-    p("1) For viewing a single hypnogram, Please upload a file in any of the following formats."),
-    strong(" .annot"),
-    br(),
-    strong(" .eannot"),
-    br(),
-    strong(" .xml"),
-    br(),
-    br(),
+    h3("N=1 mode: view a single hypnogram and generate hypnogram statistics"),
+    p("Upload a stage annotation file in any of the following formats (see Luna website for details):"),
+    strong("   .annot"),
+    p("Luna standard annotation format"),
+    strong("   .eannot"),
+    p("Epoch-based one stage code per row"),
+    strong("   .xml"),
+    p("NSRR-style XML annotation file format"),
     p(
-      "In copy & paste box, you can paste the staging annotations",
-      span("(W,N1,N2,N3,R)", style = "color:blue"),
-      ". The format is one row per epoch, i.e each row contains a single label, that is attached to that epoch."
+      "Alternatively, in the Copy & Paste box, you can paste the staging annotations",
+      span("(W,N1,N2,N3,R,L or ?)", style = "color:blue"),
+      ". Format: one row per epoch, i.e each row contains a single label for that epoch, similar to an .eannot file"
     ),
-    em("By default, Luna assumes epochs are 30-seconds in duration."),
-    # div(" In copy & paste box, you can paste staging annotations (W,N1,N2,N3,R).
-    #  The format is one row per epoch, i.e each row contains a single label.", style = "color:blue"),
-    # p(".eannot", style = "font-family: 'times'; font-si16pt"),
-    # p(".xml", style = "font-family: 'times'; font-si16pt"),
+    em("By default, Luna assumes epochs are 30 seconds in duration."),
     hr(),
-    p("2) For viewing mutiple hypnograms, Please upload a file in the following format."),
-    strong(" .hypnos"),
+    h3("N>1 mode: viewing and aligning multiple hypnograms"),
+    p("Upload a '.hypnos' file in the following format: 4 tab-delimited columns with a header:"),
+    p("  - first column: subject identifier (must be labelled ID)"),
+    p("  - second column: epoch number (can be labelled anything in the header)"),
+    p("  - third column: clock-time in hh:mm:ss 24-hour format (can be labelled anything in the header)"),
+    p("  - fourth column: stage code as N1,N2,N3,R,W,L or ? (can be labelled anything in the header)"),
     br(),
-    br(),
-    p("To create this format, Please use the following Luna command."),
+    p("To use Luna to create the required inputs (given a sample list and records with stage annotations):"),
     code("luna s.lst -o out.db -s HYPNO epoch verbose=F"),
-    code("destrat out.db +HYPNO -r E -v OSTAGE CLOCK_TIME > mutiple.hypnos"),
-    br(),
+    code("destrat out.db +HYPNO -r E -v OSTAGE CLOCK_TIME > multiple.hypnos"),
+    p("Note that using OSTAGE instead of STAGE takes the original stage, i.e. before any edits imposed by Luna" ),
+    p("You can optionally include the sleep cycle code (1,2,3 or NA is not in a cycle) in the 5th column:"),
+    code("destrat out.db +HYPNO -r E -v OSTAGE CLOCK_TIME CYCLE > multiple.hypnos"),
+    p("You can also work with compressed files directly:"),
+    code("destrat out.db +HYPNO -r E -v OSTAGE CLOCK_TIME | gzip > multiple.hypnos.gz"),
+    p("The file extension should be either .hypno or .hypnos.gz"),
+    hr(),
+    h5("Attaching other covariate data"),
+    p("You can also attached artitrary covariate data by uploading a tab-delimited text file in Luna vars format (first column must be ID)")
   )
 )
