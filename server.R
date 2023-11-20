@@ -467,6 +467,7 @@ server <- function(input, output, session) {
     # Reset Shiny UI components
   })
 
+
   observeEvent(input$upload2, {
     values2$file.details <-
       list(
@@ -500,7 +501,8 @@ server <- function(input, output, session) {
     covars <- covars[ covars$ID %in% values2$ids , ]
     covars <- covars[ order( covars$ID ) , ] 
     values2$covars <- covars
-    
+    # TODO.. probably need to add merge() in w/ hypnos IDs , i.e. make unique(ID)
+    # i.e. ensure we handle if people missing in covar file but present in hypnos
     init.covars()
   })
 
@@ -593,7 +595,7 @@ server <- function(input, output, session) {
     all.secs <- 30 * floor( all.secs / 30)
     sixes <- 30 * floor( sixes / 30 )
     
-    # Need clarification ( secs less than 12 hrs )
+    # secs less than 12 hrs 
     secs[secs < 43200] <- secs[secs < 43200] + 86400
     all.secs[all.secs < 43200] <- all.secs[all.secs < 43200] + 86400
     sixes[ sixes < 43200 ] <- sixes[ sixes < 43200 ] + 86400
@@ -844,15 +846,6 @@ server <- function(input, output, session) {
 	# use full space
 	par(mar=c(0,0,0,0))
 
-        plot.new()
-
-        # plot.window(xlim = c(-10, nrow(data)), ylim = c(-10, ncol(data)))
-        # axis(side = 1, pos = 0, at = seq(from = 0, to = nrow(data), by = 1), col = "gray20",
-        #     lwd.ticks = 0.25, cex.axis = 1, col.axis = "gray20", lwd = 1)
-        # axis(side = 2, pos = 25, at = seq(from = 0, to = ncol(data), by = 1),
-        #     col = "gray20", las = 2, lwd.ticks = 0.5, cex.axis = 1,
-        #     col.axis = "gray20", lwd = 1.5)
-
 	#
 	# determine palette (based on number,sequence of observed stages
 	#
@@ -919,7 +912,6 @@ server <- function(input, output, session) {
             lines( c(hrs[t],hrs[t]),c(-0.015,-0.03) )
             text( hrs[t], -0.03 , tms[t],pos=1,adj=0.5)
             }
-#         lines( c(hrs[ which( tms == "6hr" ) ] , hrs[ which( tms == "0hr" ) ] ) , c(0,1), lwd=1, lty=1 )
         }
 
 
@@ -962,7 +954,7 @@ server <- function(input, output, session) {
   idx <- input$hover1$y / values2$opt[["height"]]
 
   # adjust height by 10% due to margin
-  idx <- idx * 1.1
+  idx <- idx * 1.1   
   if ( idx <= 1 )
    {
    ids <- values2$ids
