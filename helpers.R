@@ -13,10 +13,10 @@ lstgn.hypnoscope <- function(ssc) {
     ss[ss == "N3" | ss == "NREM3"] <- 3
     ss[ss == "R" | ss == "REM"] <- 4
     ss[ss == "W" | ss == "wake"] <- 5
-    ss[ss == "L" ] <- 6
-    ss[ss == "?" | ss == "U" ] <- 7
-    ss[is.na(ss)] <- 7
-
+    ss[ss == "WASO" ] <- 6
+    ss[ss == "L" ] <- 7
+    ss[ss == "?" | ss == "U" ] <- 8
+    ss[is.na(ss)] <- 8
     ss <- as.integer(ss)
     # add in cycle info
     ss <- ss + ssc[,2] * 10
@@ -24,20 +24,55 @@ lstgn.hypnoscope <- function(ssc) {
     ss
 }
 
-lhypno.mini <- function( ss , label )
+lstgn.waso <- function (ss) 
+{
+    ss[ss == "N1" | ss == "NREM1"] <- -1
+    ss[ss == "N2" | ss == "NREM2"] <- -2
+    ss[ss == "N3" | ss == "NREM3"] <- -3
+    ss[ss == "R" | ss == "REM"] <- 0
+    ss[ss == "W" | ss == "wake" | ss == "WASO" ] <- 1
+    ss[ss == "?" | ss == "L"] <- 2
+    ss[is.na(ss)] <- 2
+    as.numeric(ss)
+}
+
+
+lstgcols.waso <- function (s)  {
+    as.vector(sapply(s, function(x) {
+        ifelse(x == "NREM1" | x == "N1", rgb(0, 190, 250, 255, 
+            maxColorValue = 255), ifelse(x == "NREM2" | x == 
+            "N2", rgb(0, 80, 200, 255, maxColorValue = 255), 
+            ifelse(x == "NREM3" | x == "N3", rgb(0, 0, 80, 255, 
+                maxColorValue = 255), ifelse(x == "NREM4" | x == 
+                "N3", rgb(0, 0, 50, 255, maxColorValue = 255), 
+                ifelse(x == "REM" | x == "R", rgb(250, 20, 50, 
+                  255, maxColorValue = 255), ifelse(x == "L", 
+                  rgb(246, 243, 42, 255, maxColorValue = 255), 
+                  ifelse(x == "wake" | x == "W" | x == "WASO" , rgb(49, 173, 
+                    82, 255, maxColorValue = 255), rgb(100, 100, 
+                    100, 100, maxColorValue = 255))))))))
+    }))
+}
+
+
+lhypno.mini <- function( ss , ids )
 {
   ss[is.na(ss)] <- "?"
-  sn <- lstgn(ss)
-  plot(sn, lwd = 2, col = "gray", axes = F, ylim = c(-4.5, 3.5), ylab = "", yaxt = "n" ,type="l" )
-  points( sn, col = lstgcols(ss) , pch = 20, cex=1 )
-  text( 5 , 2.7 , paste( label , " (" , round(length(sn)/120,1)," hrs)", sep=""), pos=4,adj=0) 
+  uids <- unique(ids)  
+  mx <- tapply( ss , ids , length )
+  plot( c(0,max(mx)+100) , c(0,length(mx)+1) , type="n" , ylab = "", yaxt = "n" , axes = F ) 
+  for (i in 1:length(uids) ) {
+    ee <- ss[ ids == uids[i] ]
+    points( 100 + 1:length(ee) , rep( i , length(ee) ) , col = lstgcols.waso(ee) , pch = "|", cex=1 )
+    text( 1 , i , paste( uids[i] , " (" , round(length(ee)/120,1)," hrs)", sep=""), pos=4,adj=0)
+  }
 }
 
 lhypno2 <- function(hypno, cycles = NULL, times = seq(0, by = 30, length.out = length(ss)), start = 0, stop = max(times)) {
   ss <- hypno$STAGE
   ss[is.na(ss)] <- "?"
   e <- times / 3600
-  sn <- lstgn(ss)
+  sn <- lstgn.waso(ss)
   
   plot(e, sn, type = "n", lwd = 2, col = "gray", axes = F, ylim = c(-3, 3.5), ylab = "", yaxt = "n", xaxs = "i", xlim = c(start, stop) / 3600, xlab = "Time (hrs)")
   # change points
@@ -48,7 +83,7 @@ lhypno2 <- function(hypno, cycles = NULL, times = seq(0, by = 30, length.out = l
       lines(rep(((times[chg] + times[chg + 1]) / 2) / 3600, 2), c(sn[chg], sn[chg + 1]), lwd = 2, col = "gray")
     }
   }
-  points(e, sn, col = lstgcols(ss), type = "p", cex = 1, pch = 20)
+  points(e, sn, col = lstgcols.waso(ss), type = "p", cex = 1, pch = 20)
 
   start_spt <- head(which(hypno$SPT == 1), n = 1) * 30
   stop_spt <- tail(which(hypno$SPT == 1), n = 1) * 30

@@ -34,14 +34,14 @@ ui <- navbarPage(
         ),
         textOutput("text.header1a"),
         hr(style = "border-color: #d9d9d9"),
-        actionButton("load.default", "Load an example hypnogram",width="100%"),
+        actionButton("load.default", "Example hypnogram",width="100%"),
         hr(style = "border-color: #d9d9d9"),
         import_copypaste_ui(id = "myid", title = NULL, name_field = F)
       ),
       column( # Main
         10,
         plotOutput("hypno1",
-          width = "100%", height = "200px",
+          width = "100%", height = "180px",
         ),
         div(style = "margin-top: 50px"),
         tabsetPanel(
@@ -76,7 +76,7 @@ ui <- navbarPage(
         ),
         textOutput("text.header2a"),
         hr(style = "border-color: #d9d9d9"),
-        actionButton("load.default2", "Load example hypnograms",width="100%"),
+        actionButton("load.default2", "Example hypnograms",width="100%"),
         hr(style = "border-color: #d9d9d9"),
         fileInput("upload3",
           label = "Optional covariates",
@@ -86,7 +86,7 @@ ui <- navbarPage(
         selectInput(inputId = "ultradian2", label = "Align by", choices = c("Clock-time", "Elapsed-time"), selected = "Clock-time", multiple = F),
         selectInput(inputId = "sort", label = "Sort by", choices = c("Unsorted","Sleep Onset", "Start of recording"), selected = "Unsorted", multiple = F),
         selectInput(inputId = "color", label = "Color scheme",
-	 choices = c("All", "W", "N1", "N2", "N3", "NR", "R", "S", "Cycle","L", "U"), selected = "All", multiple = F),
+	 choices = c("All", "W", "WASO", "N1", "N2", "N3", "NR", "R", "S", "Cycle","L", "U"), selected = "All", multiple = F),
         hr(style = "border-color: #d9d9d9"),
         uiOutput(outputId = "n"),
         hr(style = "border-color: #d9d9d9"),
@@ -97,7 +97,7 @@ ui <- navbarPage(
       column(
         10,
         align = "left",
-	plotOutput("hyp1",  width = "100%", height = "40px") , 
+	plotOutput("hyp1",  width = "1280px", height = "50px") , 
          box(
             style = "width:1280px; overflow-x: scroll; height:800px; overflow-y: scroll;",
             imageOutput("myImage", hover = hoverOpts(id="hover1" , delay=150 )) 
