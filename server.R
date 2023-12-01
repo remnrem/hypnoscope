@@ -70,16 +70,48 @@ server <- function(input, output, session) {
   })
 
   #--------------------------------------------
+  # textAreaInput modele (swapped in for import_copypaste_server() above)
+
+  observeEvent( input$comp1.doimport , {
+    req( input$comp1.import )
+    ss <- unlist(strsplit( input$comp1.import, split = '[\r \n]' ) )
+    ss <- ss[ ss != "" ]
+
+    values$edf_start <- NULL
+    st <- ss[ grep("^@",ss) ]
+    if ( length( st ) == 1 && nchar(st)>5 )
+    {
+     values$edf_start = substr( st , 2, nchar(st ) )
+     ss <- ss[ ! grepl("^@",ss) ]
+    }
+    
+    reset(id = "upload1")
+    txtPath <- tempfile(fileext = ".eannot")
+    write.table( ss , file=txtPath , row.names=F,col.names=F,quote=F,sep="\n" )
+
+    annot.names <- basename(txtPath)
+    annot.paths <- txtPath
+    lset("epoch-check", "100000000")
+
+    # Input file details
+    values$file.details <- list(
+        annot.names = annot.names,
+        annot.paths = annot.paths
+      )
+
+  } ) 
+
+  #--------------------------------------------
 
   # initiate view w/ an example data set
   observeEvent(input$load.default, {
     reset(id = "upload1")
-
+    values$edf_start <- "21:18:06"
     values$file.details <-
       list(
         annot.names = "learn-nsrr02.xml",
         annot.paths = "data/learn-nsrr02.xml"
-      )
+      )    
     # Reset Shiny UI components
   })
 
@@ -117,7 +149,9 @@ server <- function(input, output, session) {
       startTime <- extract_hms(annot.paths)
       lempty.edf(start = startTime)
     } else {
-      lempty.edf()
+      # we may have had @hh:mm:ss passed via text box
+      if ( ! is.null( values$edf_start ) ) lempty.edf(start = values$edf_start )
+      else lempty.edf()
     }
 
     # read all EDF+ annotations as class-level
@@ -182,6 +216,12 @@ server <- function(input, output, session) {
       values$opt[["hypno.stages"]] <- ret$HYPNO$SS
     }
 
+    # update text box (adds EDF start time in too)
+    jj <- c( paste( "@", ret$HYPNO$BL$HMS0_START ,sep="") , ret$HYPNO$E$STAGE )
+    updateTextAreaInput( inputId = "comp1.import" ,
+                         label = NULL,
+			 value = paste( jj , collapse="\n" , sep="\n" ) )
+
     # report to console
     cat(" # epochs (raw)", values$opt[["ne"]], "\n")
     cat(" # epochs (stage-aligned)", values$opt[["ne.aligned"]], "\n")
@@ -189,8 +229,21 @@ server <- function(input, output, session) {
 
     output$hypno1 <- renderPlot({
       req(values$hasstaging)
-      par(mar = c(5, 2.5, 0, 0))
-      lhypno2(values$opt[["hypno.epochs"]],
+      par(mar = c(6.5, 2.5, 0, 0.5))
+      lhypno2( values$opt[["hypno.epochs"]],
+        t0 = values$opt[["hypno.stats"]]$HMS0_START ,
+	t1 = values$opt[["hypno.stats"]]$HMS1_LIGHTS_OFF ,
+	t2 = values$opt[["hypno.stats"]]$HMS2_SLEEP_ONSET ,
+        t3 = values$opt[["hypno.stats"]]$HMS3_SLEEP_MIDPOINT ,
+	t4 = values$opt[["hypno.stats"]]$HMS4_FINAL_WAKE ,
+	t5 = values$opt[["hypno.stats"]]$HMS5_LIGHTS_ON ,
+	t6 = values$opt[["hypno.stats"]]$HMS6_STOP , 
+        e1 = as.numeric( values$opt[["hypno.stats"]]$E1_LIGHTS_OFF ) ,
+        e2 = as.numeric( values$opt[["hypno.stats"]]$E2_SLEEP_ONSET ) ,
+      	e3 = as.numeric( values$opt[["hypno.stats"]]$E3_SLEEP_MIDPOINT ) ,	
+        e4 = as.numeric( values$opt[["hypno.stats"]]$E4_FINAL_WAKE ) ,
+        e5 = as.numeric( values$opt[["hypno.stats"]]$E5_LIGHTS_ON ) ,
+        e6 = as.numeric( values$opt[["hypno.stats"]]$E6_STOP ) ,
         cycles = values$opt[["hypno.epochs"]]$CYCLE,
         times = values$opt[["init.epochs.aligned"]]$START
       )
@@ -429,8 +482,10 @@ server <- function(input, output, session) {
       txtPath <- tempfile(fileext = ".annot")
 
       # class(stage) . . start stop .
-      stages <- values2$opt[["data"]][ values2$opt[["data"]]$ID %in% input$procn1 , c("SS","CLOCK_TIME") ] 
-      stages <- data.frame( stages[,1] , INST = "." , CH = "." , START = stages[,2] , STOP = "+30" , META = "." ) 
+      stages <- values2$opt[["data"]][ values2$opt[["data"]]$ID %in% input$procn1 , c("SS","CLOCK_TIME") ]
+      stages[,1] <- lstg.reduce( stages[,1] )
+      stages <- data.frame( stages[,1] , INST = "." , CH = "." , START = stages[,2] , STOP = "+30" , META = "." )
+      print(stages)
       write.table( stages , file = txtPath , sep="\t" , row.names=F, col.names=F, quote=F ) 
 
       annot.names <- input$procn1
@@ -500,28 +555,52 @@ server <- function(input, output, session) {
 
     covars <- covars[ covars$ID %in% values2$ids , ]
     covars <- covars[ order( covars$ID ) , ] 
-    values2$covars <- covars
-    # TODO.. probably need to add merge() in w/ hypnos IDs , i.e. make unique(ID)
-    # i.e. ensure we handle if people missing in covar file but present in hypnos
+
+    # merge w/ info from .hypnos file (annot start/stop times and optinally, 
+    df <- merge( values2$opt[["info"]] , covars , by="ID" , all.x = T )
+
+    # if contains special variables EDF_START and EDF_STOP (from Luna HEADERS) then
+    # convert these two numerics (same noon-noon encoding)
+    edf_start <- edf_stop <- NA
+    
+    if ( any( names(df) == "EDF_START" ) ) {
+      edf_start <- lubridate::period_to_seconds(lubridate::hms(df$EDF_START))
+      edf_start[ edf_start < 43200 ] <- edf_start[ edf_start < 43200 ] + 86400
+      edf_start <- edf_start - 43200
+    }
+
+    if ( any( names(df) == "EDF_STOP" ) ) {
+      edf_stop <- lubridate::period_to_seconds(lubridate::hms(df$EDF_STOP))
+      edf_stop[ edf_stop < 43200 ] <- edf_stop[ edf_stop < 43200 ] + 86400
+      edf_stop <- edf_stop - 43200
+    }
+
+    df <- data.frame( df$ID , EDF_START_SEC = edf_start , EDF_STOP_SEC = edf_stop , df[,-1] ) 
+
+    values2$opt[["covars"]] <- df
+
     init.covars()
   })
 
 
   init.covars <- function() {
     srts <- c( "Unsorted" , "Sleep Onset", "Start of recording" )
-    updateSelectizeInput(session, inputId = "sort", choices = c( srts, names(values2$covars)[-1] ) , selected = NULL)
+    updateSelectizeInput(session, inputId = "sort", choices = c( srts, names(values2$opt[["covars"]])[-1] ) , selected = NULL)
   }
 
 
   output$covar.table <- DT::renderDataTable({
-    req(values2$covars )
+    req( values2$opt[["covars"]] )
 
-    df <- values2$covars 
+    df <- values2$opt[["covars"]]
     df[is.na(df)] <- "."
+   
+    if ( ! is.null( values2$sort_by ) )
+      df <- df[ rev(values2$sort_by)  , ]
 
     DT::datatable( df , escape = F, rownames = F ,
        options = list(
-        scrollY = "480px",
+        scrollY = "800px",
         scrollX = "100%",
         buttons = list(list(extend = "copy", text = "Copy")),
         paging = F, ordering = F,
@@ -537,7 +616,13 @@ server <- function(input, output, session) {
   # Load data
   observeEvent(values2$file.details, {
 
-#    cat( "loading1\n")
+    values2$sort_by <- NULL
+    values2$opt  <- NULL
+    values2$h1.stgs <- NULL
+    values2$h1.ids <- NULL
+    values2$cycles <- NULL
+    values2$ids <- NULL
+    
     
     values2$opt[["hypnonames"]] <- values2$file.details[["hypnos.names"]]
     # assume 4 cols, ID E CLOCK_TIME STAGE;
@@ -547,9 +632,13 @@ server <- function(input, output, session) {
     #  use +10, +20 etc if epoch in 1st, 2nd, etc cycle
     #  first col must be "ID" , otherwise names can change
 
+    cat( "reading .hypnos file...\n")
+
     d <- read.table(values2$file.details[["hypnos.file"]], header = T, stringsAsFactors = F)
     if ( names(d)[1] != "ID" ) stop( "first col must be ID" )
     if ( names(d)[2] != "E" ) stop( "second col must be E (epoch)" )
+
+    cat( "pre-processing hypnograms...\n" )
 
     # ensure original order is ID-sorted
     d <- d[ order(d$ID,d$E) , ] 
@@ -574,6 +663,17 @@ server <- function(input, output, session) {
     d$SS[ d$SS == "REM" ] <- "R"
     d$SS[ tolower(d$SS) == "wake" ] <- "W"
 
+    # truncate at 24 hours ( 2880 epochs assuming 30-sec epochs) 
+    long.ids <- unique( d$ID[ d$E > 2880 ] )
+    if ( length( long.ids ) )
+    {
+     cat( "***** warning, dropping epochs > 24 hrs *****\n" )
+     print( long.ids )
+     d <- d[ d$E <= 2880 , ]
+     # special 'truncated' flag
+     d$SS[ d$E == 2880 ] <- "T" 
+    }
+    
     # save IDs (in order)
     values2$ids <- unique( d$ID ) 
     updateSelectizeInput(session, inputId = "procn1", choices = values2$ids , selected = NULL)
@@ -586,36 +686,110 @@ server <- function(input, output, session) {
     }
 
     # wipe any covariates
-    values2$covars <- NULL
+    values2$opt[["covars"]] <- NULL
     init.covars()
-
+   
     # Get first epoch for each individual
     d1 <- d[d$E == 1, ]
-
-#    cat( "loading2\n")
 
     # Convert HMS to seconds
     secs <- lubridate::period_to_seconds(lubridate::hms(d1$CLOCK_TIME))
 
-    # for clocktime frames
-    all.secs <- lubridate::period_to_seconds(lubridate::hms(d$CLOCK_TIME))
-    sixes <- lubridate::period_to_seconds(lubridate::hms( c("18:00:00","06:00:00") ) )
+    # for x-axis scale - either max length for elapsed records    
+    laste <- data.frame( E = tapply( d$E , d$ID , max ) ) 
+    laste$ID <- rownames( laste )
 
-#    cat( "loading2 (done times)\n")
- 
+    # merge in 
+    laste <- merge( laste , d , by=c("ID","E") )
+    all.secs <- lubridate::period_to_seconds(lubridate::hms(laste$CLOCK_TIME))
+
     # Align to 30 sec epoch
     secs <- 30 * floor(secs / 30)
     all.secs <- 30 * floor( all.secs / 30)
-    sixes <- 30 * floor( sixes / 30 )
+
+    # for covar-table
+    values2$opt[["info"]] <- cbind( d1$ID , d1$CLOCK_TIME , laste[,c("CLOCK_TIME","E") ] )
+    names(values2$opt[["info"]]) <- c("ID","ANNOT_START","ANNOT_STOP","ANNOT_NE") 
+
+
+    # flag anything that spans noon, and pick longer part
+    # (if equal pick first ) ; also, do not want to go past
+    # end noon, so note SEC >= 43200 below, i.e. max of 1 .. 2880 epochs
+    #  but times not wrapped yet, if SEC1 starst before midnight but SEC ends
+    # after noon, then SEC1 > 43200 but SEC1 > SEC2 also
+
+    #   ---M-------N--------M---
+    #      0     X----Y           standard
+
+    #      ---------Y     X--     but also,  SEC2 >= NOON & SEC1 > SEC2
+
+    #      ----Y        X----     here SEC1 > SEC2 but no span of noon (i.e. SEC1>NOON & SEC2 < NOON ) 
+
+    #          X------------      and        SEC1 < NOON & SEC1 > SEC2
+    #      --Y
+
+    d1$SEC1 <- secs
+    d1$SEC2 <- all.secs
+    d1$SPANOON <- d1$SEC1 < 43200 & d1$SEC2 >= 43200 | ( d1$SEC2 >= 43200 & d1$SEC1 > d1$SEC2 ) | ( d1$SEC1 < 43200 & d1$SEC1 > d1$SEC2 ) 
+    d1$PICK <- NA
+    d1$FIRSTHALF <- 43200 - d1$SEC1 >= d1$SEC2 - 43200
+    d1$PICK[ d1$SPANOON & d1$FIRSTHALF] <- 1
+    d1$PICK[ d1$SPANOON & ! d1$FIRSTHALF ] <- 2
     
-    # secs less than 12 hrs 
-    secs[secs < 43200] <- secs[secs < 43200] + 86400
-    all.secs[all.secs < 43200] <- all.secs[all.secs < 43200] + 86400
-    sixes[ sixes < 43200 ] <- sixes[ sixes < 43200 ] + 86400
+    # remove half if noon-spanning and flag the truncation event at noon
+    # need second of every epoch for these indiv
+    if ( any( d1$SPANOON ) )
+    {
+      nsecs <- lubridate::period_to_seconds(lubridate::hms( d$CLOCK_TIME ) )      
+      # mark truncations at noon
+      d$SS[ d$ID %in% d1$ID[ d1$SPANOON ] & nsecs == 43200 ] <- "T"
+
+      # excise bad half
+      inc1 <- d$ID %in% d1$ID[ d1$SPANOON & d1$PICK == 1 ]
+      inc2 <- d$ID %in% d1$ID[ d1$SPANOON & d1$PICK == 2 ] 
+      x1 <- inc1 & nsecs >= 43200
+      x2 <- inc2 & nsecs <  43200
+      d <- d[ ! ( x1 | x2 ) , ] 
+
+      # edit E counts as needed (if we removed the first half, i.e. inc2 == T
+      inc2 <- unique( d1$ID[ d1$SPANOON & d1$PICK == 2 ] ) 
+      for (id in inc2 ) {
+        ii <- d$ID == id
+        d$E[ ii ] <- 1:sum(ii)
+      }
+
+     # remake d1 etc [ follow steps above ] 
+
+     d1 <- d[d$E == 1, ]
+     secs <- lubridate::period_to_seconds(lubridate::hms(d1$CLOCK_TIME))
+     laste <- data.frame( E = tapply( d$E , d$ID , max ) ) 
+     laste$ID <- rownames( laste )
+     laste <- merge( laste , d , by=c("ID","E") )
+     all.secs <- lubridate::period_to_seconds(lubridate::hms(laste$CLOCK_TIME))
+     secs <- 30 * floor(secs / 30)
+     all.secs <- 30 * floor( all.secs / 30)
+
+    }      
     
-    # Get earliest and latest time points
+    # Get earliest time point (before rescaling)
     td <- seconds_to_period(min(secs))
     values$first.epoch <- sprintf("%02d:%02d:%02d", td@hour, minute(td), second(td))
+   
+    # original times: midnight - midnight
+    # convert: noon - noon 
+    # wrap at noon:
+    secs[secs < 43200] <- secs[secs < 43200] + 86400
+    all.secs[all.secs < 43200] <- all.secs[all.secs < 43200] + 86400
+
+    # also get similar values for 6pm/6am for clock-time displays
+    sixes <- lubridate::period_to_seconds(lubridate::hms( c("18:00:00","06:00:00") ) )
+    sixes <- 30 * floor( sixes / 30 )
+    sixes[ sixes < 43200 ] <- sixes[ sixes < 43200 ] + 86400
+
+    # scale back so noon-noon is 0 .. 86400
+    secs <- secs - 43200
+    all.secs <- all.secs - 43200
+    sixes <- sixes - 43200 
 
     # Get epoch-wise starts for all people
     d1$E1 <- (secs - min(secs)) / 30
@@ -624,46 +798,44 @@ server <- function(input, output, session) {
     # Adjust epoch counts : EA = aligned epochs (by clock)
     d <- merge(d, d1[, c("ID", "E1")], by = "ID")
     d$EA <- d$E + d$E1
-
+    
     # get last epoch (clock-time)
     first_clock <- min(secs) 
     last_clock <- max( all.secs )
-#    cat( "fistlast clock " , first_clock , last_clock , "\n" )
 
     # scale 6pm/6am given secs
-#    cat( "min( secs ) " , min(secs) , "\n" )
-#    cat( "max( secs ) " , max(secs) , "\n" )
-#    cat( "sx " , sixes , "\n" )
     values$sixpm <- ( sixes[1] - first_clock ) / ( last_clock - first_clock )
     values$sixam <- ( sixes[2] - first_clock ) / ( last_clock - first_clock ) 
-#    cat( "sixes", values$sixpm , values$sixam , "\n" ) 
 
     # Get key anchors for each individual: sleep onset / offset, lights, sleep midpoint
     # also flags WASO vs W here
     d$SLEEP <- as.integer(d$SS %in% c("N1", "N2", "N3", "R"))
-    d1 <- as.data.frame(tapply(d$EA[d$SLEEP == 1], d$ID[d$SLEEP == 1], min))
+
+    # T2 (for WASO calc, but also aligning elapsed-time recs)
+    # get sleep onset - or recording start, if no sleep (first EA)
+    # T4 (just for WASO calc) get sleep onset - or recording end, if no sleep (last EA)
+
+    # EA * SLEEP - so 0 is min/max if no sleep
+    f.t2 <- function(x) { ifelse( sum(x) == 0 , 1 , min(x[x>0]) ) } 
+    f.t4 <- function(x) { ifelse( sum(x) == 0 , length(x) , max(x) ) } 
+
+    d1 <- as.data.frame( tapply(d$EA * d$SLEEP , d$ID , f.t2 ) )
     names(d1) <- "T2"
     d1$ID <- rownames(d1) # Timed epoch when subject starts to sleep
 
-    d2 <- as.data.frame(tapply(d$EA[d$SLEEP == 1], d$ID[d$SLEEP == 1], max))
+    d2 <- as.data.frame( tapply(d$EA * d$SLEEP , d$ID , f.t4 ) )
     names(d2) <- "T4"
-    d2$ID <- rownames(d1) 
+    d2$ID <- rownames(d2)
 
-#    cat( "merging back\n")
     # nb. do not assume all individuals will have sleep... thus all.x = T
     d <- merge(d, d1[, c("ID", "T2")], by = "ID", all.x = T)
     d <- merge(d, d2[, c("ID", "T4")], by = "ID", all.x = T)
 
     # set WASO
-    d$SS[ d$SS == "W" & d$EA >= d$T2 & d$EA <= d$T4 ] <- "WASO" 
+    d$SS[ d$SS == "W" & (!is.na(d$T2)) & (!is.na(d$T4)) & d$EA >= d$T2 & d$EA <= d$T4 ] <- "WASO" 
     
-#    cat( "merging back (done)\n")
-
     # Align to T2 == 0 (sleep onset) 
     d$E2 <- d$EA - d$T2
-
-    # if no sleep, then T2 is NA, so arbitrarily set to start of recording instead
-    d$E2[ is.na( d$E2 ) ] <- 0 
 
     # T2 alignment ticks - 
     values$onset_anchor <- ( 0 - min( d$E2 ) ) / ( max( d$E2 ) - min( d$E2 ) ) 
@@ -672,37 +844,38 @@ server <- function(input, output, session) {
     # numeric encoding
     d$SN <- lstgn.hypnoscope( d[,c("SS","CYCLE")] )    
 
+    # reorder
+    d <- d[ order(d$ID,d$E) , ] 
+
+
     # all done, wrap up pre-processing
     values2$opt[["tmp_data"]] <- d1
     values2$opt[["data"]] <- d
     values2$opt[["ni"]] <- ni
     cat( "ni" , values2$opt[["ni"]]  , "\n" )
-#    values2$opt[["stgpal"]] <- c("#3D6D88", "#579DAF", "#0B2F38", "#CA7647", "#EBE3DD", lstgcols("?"))
+    cat("all done here\n")
+
   }) # End of observe Event (input$upload)
+
 
   # Create reactive expressions with reactive({ })
   # Reaction expression for Elapsed-time (ONSET) computation
   # Results are cached the first time the expression is called
+
   onset <- reactive({
+    cat( "aligning to elapsed-time... this may take a while..\n" )
     dmin <- tapply(values2$opt[["data"]]$E2, values2$opt[["data"]]$ID, min)
     dmax <- tapply(values2$opt[["data"]]$E2, values2$opt[["data"]]$ID, max)
     ids <- unique(values2$opt[["data"]]$ID)
     mindmin <- min(dmin)
     dmin <- dmin - mindmin + 1
     dmax <- dmax - mindmin + 1
-#    print( table( values2$opt[["data"]]$E2 ) )
-#    print( summary( values2$opt[["data"]]$E2 ) ) 
     ne <- max(values2$opt[["data"]]$E2) - min(values2$opt[["data"]]$E2) + 1    
     ni <- values2$opt[["ni"]]
-#    cat("ne",ne, values2$opt[["ni"]] , "\n")
-    m <- matrix(NA, nrow = ne, ncol = values2$opt[["ni"]])
-   
+    m <- matrix(NA, nrow = ne, ncol = values2$opt[["ni"]])   
     for (i in 1:ni)
-     m[(dmin[i]):(dmax[i]), i] <- values2$opt[["data"]]$SN[values2$opt[["data"]]$ID == ids[i]] 
-
-#    for (i in 1:values2$opt[["ni"]])
-#     m[(dmin[i]):(dmax[i]), i] <- lstgn.hypnoscope( values2$opt[["data"]][ values2$opt[["data"]]$ID == ids[i] ,c( "SS", "CYCLE" ) ] )
-
+     m[(dmin[i]):(dmax[i]), i] <- values2$opt[["data"]]$SN[values2$opt[["data"]]$ID == ids[i]]
+    cat(ne, "epochs", values2$opt[["ni"]] , "individuals\n")
     values$clocktime_mode = F
     m
   })
@@ -710,74 +883,79 @@ server <- function(input, output, session) {
   # Reactive expression for Clock-time computation
   # Results are cached the first time the expression is called
   clockTime <- reactive({
+    cat( "aligning to clock-time... this may take a while..\n" ) 
+
     dmin <- tapply(values2$opt[["data"]]$EA, values2$opt[["data"]]$ID, min)
     dmax <- tapply(values2$opt[["data"]]$EA, values2$opt[["data"]]$ID, max)
-    ids <- unique(values2$opt[["data"]]$ID)
-    ne <- max(values2$opt[["data"]]$EA) - min(values2$opt[["data"]]$EA) + 1
-    m <- matrix(NA, nrow = ne, ncol = values2$opt[["ni"]])
+    ids <- unique(values2$opt[["data"]]$ID)    
+    ne <- max(values2$opt[["data"]]$EA) - min(values2$opt[["data"]]$EA) + 1    
+    m <- matrix(NA, nrow = ne, ncol = values2$opt[["ni"]])        
     for (i in 1:values2$opt[["ni"]])
-      m[(dmin[i]):(dmax[i]), i] <- values2$opt[["data"]]$SN[values2$opt[["data"]]$ID == ids[i]]
+      m[(dmin[i]):(dmax[i]), i] <- values2$opt[["data"]]$SN[values2$opt[["data"]]$ID == ids[i]] 
     values$clocktime_mode = T
+    cat(ne, "epochs", values2$opt[["ni"]] , "individuals\n")
     m
   })
 
+
   # note : cycle encoding : +10, +20 etc if in 1st, 2nd, etc cycle
   #  thus add dummy NAs to end... should never have codes 9/10 anyway
+  #  T = truncation
 
-  # codes
+  # codes 
   #  1  2  3  4  5  6     7   8   9   10
-  #  N1 N2 N3 R  W  WASO  L   ?   .   .
+  #  N1 N2 N3 R  W  WASO  L   ?   T   .
 
   # W = all wake
   #   i.e. all wake = W + WASO
   
   stgpalW <- reactive({
-    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("W"), "purple", "#EBE3DD", lstgcols("?"),NA,NA)
+    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("W"), "purple", "#EBE3DD", lstgcols("?"),"purple",NA)
     rep( stcol , values2$cycles + 1 ) 
   })
 
   stgpalWASO <- reactive({
-    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "purple", "#EBE3DD", lstgcols("?"),NA,NA)
+    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "purple", "#EBE3DD", lstgcols("?"),"purple",NA)
     rep( stcol , values2$cycles + 1 ) 
   })
 
   stgpalN1 <- reactive({
-    stcol <- c(lstgcols("N1"), "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"),NA,NA)
+    stcol <- c(lstgcols("N1"), "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"),"purple",NA)
     rep( stcol , values2$cycles + 1 )    
   })
 
   stgpalN2 <- reactive({
-    stcol <- c("#EBE3DD", lstgcols("N2"), "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"),NA,NA)
+    stcol <- c("#EBE3DD", lstgcols("N2"), "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"),"purple",NA)
     rep( stcol , values2$cycles + 1 )    
   })
 
   stgpalN3 <- reactive({
-    stcol <- c("#EBE3DD", "#EBE3DD", lstgcols("N3"), "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"),NA,NA)
+    stcol <- c("#EBE3DD", "#EBE3DD", lstgcols("N3"), "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"),"purple",NA)
     rep( stcol , values2$cycles + 1 )
    })
 
   stgpalNR <- reactive({
-    stcol <- c( "black", "black", "black", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"),NA,NA)
+    stcol <- c( "black", "black", "black", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"),"purple",NA)
     rep( stcol , values2$cycles + 1 )
    })
 
  stgpalR <- reactive({
-    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("R"), "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"),NA,NA)
+    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("R"), "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("?"),"purple",NA)
     rep( stcol , values2$cycles + 1 )
   })
 
   stgpalL <- reactive({
-    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("L"), "#EBE3DD",NA,NA)
+    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", lstgcols("L"), "#EBE3DD","purple",NA)
     rep( stcol , values2$cycles + 1 )
   })
 
   stgpalU <- reactive({
-    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#FF0000" ,NA,NA)  # lstgcols("?") )
+    stcol <- c("#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#FF0000" ,"purple",NA)  # lstgcols("?") )
     rep( stcol , values2$cycles + 1 )
   })
 
   stgpalS <- reactive({
-    stcol <- c("#000000", "#000000", "#000000", "#000000", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#FF0000" ,NA,NA)  # lstgcols("?") )
+    stcol <- c("#000000", "#000000", "#000000", "#000000", "#EBE3DD", "#EBE3DD", "#EBE3DD", "#FF0000" ,"purple",NA)  # lstgcols("?") )
     rep( stcol , values2$cycles + 1 )
   })
 
@@ -788,7 +966,8 @@ server <- function(input, output, session) {
   })
 
   default <- reactive({
-    stcol <- c("#3D6D88", "#579DAF", "#0B2F38", "#CA7647", "#EBE3DD", "#EBE3DD", lstgcols("L"), lstgcols("?"),NA,NA)
+    stcol <- c(lstgcols("N1"), "#579DAF", "#0B2F38", "#CA7647", "#EBE3DD", "#EBE3DD", lstgcols("L"), lstgcols("?"),"purple",NA)
+#    stcol <- c("#3D6D88", "#579DAF", "#0B2F38", "#CA7647", "#EBE3DD", "#EBE3DD", lstgcols("L"), lstgcols("?"),"purple",NA)
     rep( stcol , values2$cycles + 1 )
   })
 
@@ -812,7 +991,8 @@ server <- function(input, output, session) {
     else if ( input$sort == "Unsorted" )
      values2$sort_by <- NULL
     else
-     values2$sort_by <- order( values2$covars[ , input$sort ] , decreasing = T )
+     values2$sort_by <- order( values2$opt[["covars"]][ , input$sort ] , decreasing = T )
+
   })
 
 
@@ -823,8 +1003,6 @@ server <- function(input, output, session) {
   observeEvent(c(values2$file.details, input$ultradian2, input$color, input$sort), {
     req(values2$file.details)
 
-#     cat("mainS-1(init)\n")
- 
     values$clocktime_mode = input$ultradian2 == "Clock-time"
 
     data <- switch(input$ultradian2,
@@ -832,16 +1010,10 @@ server <- function(input, output, session) {
       "Elapsed-time" = onset()
     )
 
-#   cat("mainS3\n")
-   isolate({    
-
-#   cat("mainS0\n")
-   # sort rows?
+   # sort cols?
    if ( ! is.null( values2$sort_by ) )
     data <- data[, values2$sort_by ] 
 
-#   cat("mainS1\n")
-    
    # palette
     stcol <- switch(input$color,
       W = stgpalW(),
@@ -858,7 +1030,6 @@ server <- function(input, output, session) {
       All = default()
     )
 
-#    cat("mainS2\n")
     # Set image properties
     values2$opt["width"] <- 1150
     values2$opt["res"] <- 72
@@ -886,31 +1057,27 @@ server <- function(input, output, session) {
     }
     if (between(ncol(data), 21, 50)) {
       values2$opt["height"] <- ncol(data) * 12
-      values2$opt["width"] <- 1000
+      values2$opt["width"] <- 1150
       values2$opt["res"] <- 60
     }
     if (between(ncol(data), 2, 20)) {
-      values2$opt["height"] <- ncol(data) * 14
-      values2$opt["width"] <- 800
-      values2$opt["res"] <- 24
+      values2$opt["height"] <- ncol(data) * 5
+      values2$opt["width"] <- 1150
+      values2$opt["res"] <- 72
     }
 
 
-   output$myImage <- renderImage(
+   output$hyp2 <- renderImage(
       {
-#   cat("mainS30\n")
-        # Generate the PNG
-        outfile <- tempfile(fileext = ".jpeg")
 
-#   cat("mainS3a\n")
-        jpeg(outfile,
+       # Generate the PNG
+        outfile <- tempfile(fileext = ".png")
+
+        png(outfile,
           width = as.numeric(values2$opt["width"]),
           height = as.numeric(values2$opt["height"]),
-          res = as.numeric(values2$opt["res"]),
-          quality = 100
+          res = as.numeric(values2$opt["res"])
         )
-
-#   cat("mainS3b\n")
 
 	# use full space
 	par(mar=c(0,0,0,0))
@@ -923,24 +1090,19 @@ server <- function(input, output, session) {
 	
 	brks <- c( ustg[1] - 0.5 , ustg + 0.5 )
 
-#  cat("mainS3c\n")
-
-     image(data, xlim=c(-0.05,1) , ylim=c(-0.1,1) , 
-          useRaster = T, col = stcol[ustg],
+        image(data, xlim=c(-0.05,1) , ylim=c(-0.1,1) , 
+          useRaster = T, col = stcol[ustg], yaxs = "r" , 
           xaxt = "n", yaxt = "n", axes = F, frame.plot=F ,
 	  breaks = brks 
         )
 
-#   cat("mainS3d\n")
-   
 	#
 	# side plot
 	#
 
-	if ( any( names( values2$covars ) == input$sort ) )
+	if ( any( names( values2$opt[["covars"]] ) == input$sort ) )
 	{
-#   cat("mainS3e\n")
-         z <- values2$covars[ , input$sort ]
+         z <- values2$opt[["covars"]][ , input$sort ]
 	 z <- z[ order(z, decreasing=T) ] 
 	 z <- ( z - min(z,na.rm=T) ) / ( max(z,na.rm=T) - min(z,na.rm=T) )
          ni <- length(z)
@@ -952,14 +1114,14 @@ server <- function(input, output, session) {
         #
 	# x-time axis (clock-time or elapsed time)
 	#
-#   cat("mainS3f\n")
 	   
 	if ( values$clocktime_mode )
 	{
  	 lines( c(0,1) , c(-0.02 , -0.02) , col="black", lwd=1 ) 	
-	 onehr <- ( values$sixam - values$sixpm ) / 12 
-         hrs <- values$sixpm + (0:17) * onehr
-	 tms <- c( paste( 6:11,"pm",sep="") , "M" , paste( 1:11,"am",sep="") )
+	 onehr <- ( values$sixam - values$sixpm ) / 12
+	 
+         hrs <- values$sixpm + (-6:18) * onehr
+	 tms <- c( "N", paste( 1:11,"pm",sep="") , "M" , paste( 1:11,"am",sep="") , "N" )
 	 tms <- tms[ hrs >=0 & hrs <= 1 ]
 	 hrs <- hrs[ hrs >=0 & hrs <= 1 ]
 	 for (t in 1:length(tms)) {
@@ -970,7 +1132,6 @@ server <- function(input, output, session) {
 	 lines( c(hrs[ which( tms == "M" ) ] , hrs[ which( tms == "M" ) ] ) , c(0,1), lwd=1, lty=1 )
 	 lines( c(hrs[ which( tms == "6am" ) ] , hrs[ which( tms == "6am" ) ] ) , c(0,1), lwd=0.5, lty=2 )
 	}
-#   cat("mainS3g\n")
    
 	#
 	# elapsed time
@@ -989,16 +1150,13 @@ server <- function(input, output, session) {
             }
         }
 
-#   cat("mainS3h\n")
         # save
         dev.off()
-
-#   cat("mainS4\n")
 
         # Return a list containing information about the image
         list(
           src = outfile,
-          contentType = "image/jpeg",
+          contentType = "image/png",
           width = as.numeric(values2$opt["width"]),
           height = as.numeric(values2$opt["height"]),
           alt = "This is alternate text"
@@ -1006,18 +1164,22 @@ server <- function(input, output, session) {
       },
       deleteFile = TRUE
     )
-  }) # end isolate()
+
+# end of renderPlot
+#  })
+
 
   })
 
   
   # server - Print number of observations plotted
   output$n <- renderUI({
-    req(values2$file.details)
-    cat( "getting server N here...\n")
-    HTML(paste0(
-      "Number of observations: ", " <b>", values2$opt[["ni"]] , "</b>"
-    ))
+    req(values2$file.details)    
+    isolate({ 
+     HTML(paste0(
+       "Number of observations: ", " <b>", values2$opt[["ni"]] , "</b>"
+      ))
+    })
   })
 
 
@@ -1057,10 +1219,20 @@ server <- function(input, output, session) {
 
 
 
+# helper function to set height of primary plot
+#plotter_height <- function() {
+#  cat( "hgt",ceiling( values2$opt[["ni"]] * 1 ) , "\n" ) 
+#  return( ceiling( values2$opt[["ni"]] * 1 ) ) 
+#}
+
+# wrap plotOutput in renderUI to alter height of plot(s)
+#output$ui_plotter <- renderUI({  
+#  req(values2$file.details)
+#  plotOutput("hyp2", height = plotter_height(), width = "100%")
+#  })
+
 
 }
-
-
 
 
 

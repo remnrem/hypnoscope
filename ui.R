@@ -36,10 +36,15 @@ ui <- navbarPage(
         hr(style = "border-color: #d9d9d9"),
         actionButton("load.default", "Example hypnogram",width="100%"),
         hr(style = "border-color: #d9d9d9"),
-        import_copypaste_ui(id = "myid", title = NULL, name_field = F)
-      ),
+
+        #import_copypaste_ui(id = "myid", title = NULL, name_field = F)
+        textAreaInput( "comp1.import" , "Stage epochs" , width="100%", height="400px" ,
+	 placeholder="Enter stages:\n - one row per epoch\n - N1, N2, N3, R, W, L or ?)\n - if first row starts with @, sets start time @hh:mm:ss" , resize = "none" ),
+	actionButton("comp1.doimport", "Import/update",width="100%"),
+
+        ),
       column( # Main
-        10,
+        9,
         plotOutput("hypno1",
           width = "100%", height = "180px",
         ),
@@ -98,14 +103,12 @@ ui <- navbarPage(
         10,
         align = "left",
 	plotOutput("hyp1",  width = "1280px", height = "50px") , 
-         box(
-            style = "width:1280px; overflow-x: scroll; height:800px; overflow-y: scroll;",
-            imageOutput("myImage", hover = hoverOpts(id="hover1" , delay=150 )) 
-             )
-	    
-          )
-    )
-  ),
+#        box( style = "width:1280px; overflow-x: scroll; height:800px; overflow-y: scroll;", uiOutput( "ui_plotter" , hover = hoverOpts(id="hover1" , delay=150 ) ) )
+	 box( style = "width:1280px; overflow-x: scroll; height:850px; overflow-y: scroll;",
+	   imageOutput("hyp2", height = "100%" , hover = hoverOpts(id="hover1" , delay=150 ) ) )
+	) ) ),
+
+#   
 
   # Component 3
   tabPanel(

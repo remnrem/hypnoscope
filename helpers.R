@@ -16,11 +16,19 @@ lstgn.hypnoscope <- function(ssc) {
     ss[ss == "WASO" ] <- 6
     ss[ss == "L" ] <- 7
     ss[ss == "?" | ss == "U" ] <- 8
+    ss[ss == "T" ] <- 9 
     ss[is.na(ss)] <- 8
     ss <- as.integer(ss)
     # add in cycle info
     ss <- ss + ssc[,2] * 10
 
+    ss
+}
+
+# go from N>1 mode to basic N=1 mode
+lstg.reduce <- function(ss) {
+    ss[ss == "WASO" ] <- "W"
+    ss[ss == "T" ] <- "?"
     ss
 }
 
@@ -31,7 +39,7 @@ lstgn.waso <- function (ss)
     ss[ss == "N3" | ss == "NREM3"] <- -3
     ss[ss == "R" | ss == "REM"] <- 0
     ss[ss == "W" | ss == "wake" | ss == "WASO" ] <- 1
-    ss[ss == "?" | ss == "L"] <- 2
+    ss[ss == "?" | ss == "L" | ss == "T" ] <- 2
     ss[is.na(ss)] <- 2
     as.numeric(ss)
 }
@@ -39,18 +47,13 @@ lstgn.waso <- function (ss)
 
 lstgcols.waso <- function (s)  {
     as.vector(sapply(s, function(x) {
-        ifelse(x == "NREM1" | x == "N1", rgb(0, 190, 250, 255, 
-            maxColorValue = 255), ifelse(x == "NREM2" | x == 
-            "N2", rgb(0, 80, 200, 255, maxColorValue = 255), 
-            ifelse(x == "NREM3" | x == "N3", rgb(0, 0, 80, 255, 
-                maxColorValue = 255), ifelse(x == "NREM4" | x == 
-                "N3", rgb(0, 0, 50, 255, maxColorValue = 255), 
-                ifelse(x == "REM" | x == "R", rgb(250, 20, 50, 
-                  255, maxColorValue = 255), ifelse(x == "L", 
-                  rgb(246, 243, 42, 255, maxColorValue = 255), 
-                  ifelse(x == "wake" | x == "W" | x == "WASO" , rgb(49, 173, 
-                    82, 255, maxColorValue = 255), rgb(100, 100, 
-                    100, 100, maxColorValue = 255))))))))
+        ifelse(x == "NREM1" | x == "N1", "#00BEFAFF" ,
+	ifelse(x == "NREM2" | x == "N2", "#579DAF",
+        ifelse(x == "NREM3" | x == "N3" | x == "NREM4" | x == "N4" , "#0B2F38",
+        ifelse(x == "REM" | x == "R", "#CA7647",
+	ifelse(x == "L",  rgb(246, 243, 42, 255, maxColorValue = 255), 
+        ifelse(x == "wake" | x == "W" | x == "WASO" , "#EBE3DD" ,
+	rgb(100, 100, 100, 100, maxColorValue = 255) )))))) 
     }))
 }
 
@@ -68,29 +71,45 @@ lhypno.mini <- function( ss , ids )
   }
 }
 
-lhypno2 <- function(hypno, cycles = NULL, times = seq(0, by = 30, length.out = length(ss)), start = 0, stop = max(times)) {
+lhypno2 <- function(hypno, t0,t1,t2,t3,t4,t5,t6,e1,e2,e3,e4,e5,e6,
+              cycles = NULL,
+	      times = seq(0, by = 30, length.out = length(ss)),
+	      start = 0, stop = max(times)) {
+
   ss <- hypno$STAGE
   ss[is.na(ss)] <- "?"
   e <- times / 3600
   sn <- lstgn.waso(ss)
-  
-  plot(e, sn, type = "n", lwd = 2, col = "gray", axes = F, ylim = c(-3, 3.5), ylab = "", yaxt = "n", xaxs = "i", xlim = c(start, stop) / 3600, xlab = "Time (hrs)")
+
+  plot(e, sn, type = "n", lwd = 2, col = "gray", axes = F,
+       ylim = c(-3, 3.5), ylab = "", yaxt = "n",
+       xaxs = "i", xlim = c(start, stop) / 3600, xlab = "" )
   # change points
   chgs <- which(ss[1:(length(ss) - 1)] != ss[2:length(ss)])
   for (chg in chgs) {
     # do not plot connector if change spans a gap; gap define assuming 30-second epochs
     if (!(times[chg + 1] - times[chg] > 40)) {
-      lines(rep(((times[chg] + times[chg + 1]) / 2) / 3600, 2), c(sn[chg], sn[chg + 1]), lwd = 2, col = "gray")
+      lines(rep(((times[chg] + times[chg + 1]) / 2) / 3600, 2), c(sn[chg], sn[chg + 1]), lwd = 1, col = "gray")
     }
   }
-  points(e, sn, col = lstgcols.waso(ss), type = "p", cex = 1, pch = 20)
+  points(e, sn, col = lstgcols.waso(ss), type = "p", cex = 1.2, pch = 18)  #pch 20 orig
 
   start_spt <- head(which(hypno$SPT == 1), n = 1) * 30
   stop_spt <- tail(which(hypno$SPT == 1), n = 1) * 30
 
-  axis(1, c(start, stop) / 3600, lab = c("   Recording Start", ""), col = "#A8A8A8")
-  axis(1, c(start_spt, stop) / 3600, xlab = "Time (hrs)", lab = c("Sleep Onset", ""), line = 2.5, col = "#A8A8A8")
+  par(xpd=T) 
+ 
+  # augmented X time axes
+  # TRT : 0 (clock) --> TRT 
+  axis(1, c(0, e6) / 60, lab = c(t0, paste( round(e6/60,1)," hr    ",sep="") ), col = "#579DAF" )  # old col #579DAF
 
+  # Lights (in hrs)
+  axis(1, c(e1,  e5)/60  , lab = c( t1, paste( round((e5-e1)/60,1)," hr    ",sep="") ), col = "#579DAF" , pos = -6 )
+  text(  ((e1+e5)/60)/2 , -5.5 , "Lights On/Off" )
+  
+  # SPT
+  axis(1, c(e2,e4)/60 , xlab="XX", lab = c(t2,paste( round((e4-e2)/60,1)," hr  ",sep="" )), pos=-8, col="#579DAF" )
+  text(  ((e2+e5)/60)/2 , -7.5 , "Sleep Period Time" )
 
   axis(2, 2, "?", col.axis = "black", las = 2)
   axis(2, 1, "W", col.axis = lstgcols("W"), las = 2)
