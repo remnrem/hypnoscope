@@ -2,7 +2,6 @@
 library(shiny)
 library(luna)
 library(shinybusy)
-library(shinyWidgets)
 library(shinyjs)
 library(dplyr)
 library(lubridate)
