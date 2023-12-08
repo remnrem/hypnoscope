@@ -39,34 +39,6 @@ server <- function(input, output, session) {
     )
   })
 
-  # --------- Copy and Paste module----------------
-
-  imported <- import_copypaste_server("myid",
-    btn_show_data = FALSE, fread_args = list(col.names = "Annots", header = F, blank.lines.skip = T)
-  )
-
-  toListen <- reactive({
-    list(imported$status(), imported$data())
-  })
-
-  observeEvent(toListen(), {
-    if (!is.null(imported$status()) && !is.null(imported$data())) {
-      reset(id = "upload1")
-      txtPath <- tempfile(fileext = ".eannot")
-      for (stage in imported$data()) cat(stage, "\n", file = txtPath, sep = "\n", append = TRUE)
-
-      annot.names <- basename(txtPath)
-      annot.paths <- txtPath
-      lset("epoch-check", "100000000")
-
-      # Input file details
-      values$file.details <- list(
-        annot.names = annot.names,
-        annot.paths = annot.paths
-      )
-    }
-  })
-
   #--------------------------------------------
   # textAreaInput modele (swapped in for import_copypaste_server() above)
 
