@@ -16,10 +16,20 @@ RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     libxml2-dev \
     libomp-dev \
-    cmake \
     libxt6 \
+    software-properties-common \
+    lsb-release \
+    gpg-agent \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Add Kitware's APT repository for up-to-date CMake versions
+RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
+    && echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/kitware.list >/dev/null \
+    && apt-get update
+
+# Install CMake (specifying a version or the latest available)
+RUN apt-get install -y cmake
 
 WORKDIR /Programme
 
