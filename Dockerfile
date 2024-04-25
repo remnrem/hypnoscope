@@ -55,9 +55,7 @@ RUN install2.r --error --skipinstalled \
     wkb \
     shinybusy \
     shinythemes \
-    shinyWidgets \
     shinyjs \
-    datamods \
     lubridate \
     dplyr \
     aws.s3
